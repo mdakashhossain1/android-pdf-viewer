@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>Advanced PDF Viewer</title>
+
+  <!-- ============================================================
+    THREE-PART ADVANCED PDF VIEWER
+    Part 1: pdf-viewer.css  — all styles + dark mode + responsive
+    Part 2: pdf-viewer.js   — full library (class AdvancedPDFViewer)
+    Part 3: index.html      — this demo page
+    Engine: PDF.js 3.11 via CDN (auto-loaded by pdf-viewer.js)
+  ============================================================ -->
+
+  <!-- Part 1: Styles -->
+  <link rel="stylesheet" href="pdf-viewer.css">
+
+  <style>
+    /* Demo page chrome */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .demo-header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid #313244;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .demo-logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: #cba6f7;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .demo-logo svg { opacity: 0.9; }
+
+    .demo-tagline {
+      font-size: 13px;
+      color: #a6adc8;
+      flex: 1;
+    }
+
+    /* Quick-load demo buttons */
+    .demo-load-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .demo-load-bar span {
+      font-size: 12px;
+      color: #a6adc8;
+      white-space: nowrap;
+    }
+
+    .demo-btn {
+      padding: 6px 14px;
+      border: 1px solid #45475a;
+      border-radius: 6px;
+      background: #313244;
+      color: #cdd6f4;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .demo-btn:hover {
+      background: #cba6f7;
+      color: #1e1e2e;
+      border-color: #cba6f7;
+    }
+
+    .demo-btn.primary {
+      background: #cba6f7;
+      color: #1e1e2e;
+      border-color: #cba6f7;
+      font-weight: 600;
+    }
+
+    /* Viewer container */
+    .demo-viewer-wrap {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    #pdf-viewer-container {
+      flex: 1;
+      min-height: 0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* Feature chips */
+    .demo-features {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 0 4px;
+    }
+
+    .feat-chip {
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 11px;
+      color: #a6adc8;
+    }
+
+    .feat-chip.on {
+      background: #cba6f7;
+      color: #1e1e2e;
+      border-color: #cba6f7;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .demo-footer {
+      padding: 8px 24px;
+      font-size: 11px;
+      color: #585b70;
+      text-align: center;
+      border-top: 1px solid #313244;
+      flex-shrink: 0;
+    }
+
+    /* ── Responsive demo chrome ── */
+    @media (max-width: 767px) {
+      .demo-header    { padding: 8px 12px; gap: 8px; }
+      .demo-viewer-wrap { padding: 8px; gap: 6px; }
+      .demo-tagline   { display: none; }
+      .demo-features  { display: none; }        /* hide chips on mobile */
+      .demo-load-bar span { display: none; }    /* hide "Load sample:" label */
+      .demo-footer    { display: none; }
+    }
+    @media (max-width: 479px) {
+      .demo-header    { padding: 6px 10px; }
+      .demo-viewer-wrap { padding: 4px; }
+      .demo-logo      { font-size: 16px; }
+      .demo-btn       { padding: 5px 10px; font-size: 11px; }
+      #pdf-viewer-container { border-radius: 4px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Demo Header ===== -->
+<header class="demo-header">
+  <div class="demo-logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    Advanced PDF Viewer
+  </div>
+
+  <span class="demo-tagline">Full-featured · Responsive · Dark mode · Search · Thumbnails · Outline · Pinch-zoom · Keyboard shortcuts</span>
+
+  <div class="demo-load-bar">
+    <span>Load sample:</span>
+    <button class="demo-btn primary" onclick="loadSample('mozilla')">Mozilla PDF.js Test</button>
+    <button class="demo-btn" onclick="loadSample('pdfjs2')">Hello World PDF</button>
+    <button class="demo-btn" onclick="document.getElementById('file-inp').click()">
+      Open local file
+      <input type="file" id="file-inp" accept="application/pdf" style="display:none"
+             onchange="if(this.files[0]) viewer.loadFile(this.files[0])">
+    </button>
+  </div>
+</header>
+
+<!-- ===== Feature chips ===== -->
+<div class="demo-viewer-wrap">
+  <div class="demo-features">
+    <span class="feat-chip on">PDF.js Engine</span>
+    <span class="feat-chip on">Full-text Search</span>
+    <span class="feat-chip on">Thumbnails</span>
+    <span class="feat-chip on">Bookmarks / Outline</span>
+    <span class="feat-chip on">Zoom 10%–400%</span>
+    <span class="feat-chip on">Fit Width / Page</span>
+    <span class="feat-chip on">Rotate Pages</span>
+    <span class="feat-chip on">Two-page View</span>
+    <span class="feat-chip on">Dark Mode</span>
+    <span class="feat-chip on">Fullscreen</span>
+    <span class="feat-chip on">Download &amp; Print</span>
+    <span class="feat-chip on">Drag &amp; Drop</span>
+    <span class="feat-chip on">Ctrl+Scroll Zoom</span>
+    <span class="feat-chip on">Pinch-to-Zoom</span>
+    <span class="feat-chip on">Keyboard Shortcuts</span>
+    <span class="feat-chip on">Lazy Rendering</span>
+    <span class="feat-chip on">IntersectionObserver</span>
+    <span class="feat-chip on">Responsive</span>
+  </div>
+
+  <!-- ===== THE VIEWER ===== -->
+  <div id="pdf-viewer-container" style="height: calc(100dvh - 120px); min-height: 300px;"></div>
+
+</div>
+
+<footer class="demo-footer">
+  Advanced PDF Viewer · Powered by PDF.js 3.11 · Three-part library: pdf-viewer.css + pdf-viewer.js + index.html
+</footer>
+
+<!-- Part 2: Library (auto-loads PDF.js from CDN) -->
+<script src="pdf-viewer.js"></script>
+
+<script>
+  /* ============================================================
+     Initialize the viewer
+  ============================================================ */
+  const viewer = new AdvancedPDFViewer('#pdf-viewer-container', {
+    darkMode:         false,          // start in light mode
+    sidebarOpen:      true,           // sidebar visible by default
+    sidebarTab:       'thumbs',       // show thumbnails tab
+    zoom:             'fitWidth',     // initial zoom mode
+    renderTextLayer:  true,           // needed for search & copy
+    thumbSize:        160,            // thumbnail width px
+    enableDrop:       true,           // drag & drop PDF files
+    enableKeyboard:   true,           // keyboard shortcuts
+    onLoad: (pdf) => {
+      console.log('PDF loaded:', pdf.numPages, 'pages');
+    },
+    onPageChange: (page, total) => {
+      // console.log(`Page ${page} / ${total}`);
+    },
+    onError: (err) => {
+      console.error('PDF error:', err);
+    }
+  });
+
+  /* ============================================================
+     Demo sample PDFs (using publicly available test PDFs)
+  ============================================================ */
+  const SAMPLES = {
+    mozilla: 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf',
+    pdfjs2:  'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/examples/learning/helloworld.pdf',
+  };
+
+  function loadSample(key) {
+    const url = SAMPLES[key];
+    if (url) {
+      viewer.toast('Loading sample PDF…');
+      viewer.loadURL(url);
+    }
+  }
+
+  /* ============================================================
+     Auto-load the Mozilla sample on page ready
+  ============================================================ */
+  window.addEventListener('load', () => {
+    // Load default sample after a short delay (lets PDF.js CDN script load)
+    setTimeout(() => loadSample('mozilla'), 600);
+  });
+
+  /* ============================================================
+     Expose viewer globally for console access
+  ============================================================ */
+  window.pdfViewer = viewer;
+
+  // Console helpers for testing:
+  // pdfViewer.loadURL('https://example.com/file.pdf')
+  // pdfViewer.goToPage(5)
+  // pdfViewer.setZoom(150)
+  // pdfViewer.toggleDarkMode()
+  // pdfViewer.search('JavaScript')
+</script>
+</body>
+</html>
