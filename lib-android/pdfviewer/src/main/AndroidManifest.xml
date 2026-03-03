@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only needed if you call loadUrl() with an HTTP/HTTPS address.
+         PDF rendering itself is fully offline (PDF.js is bundled in assets). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

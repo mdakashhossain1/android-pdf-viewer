@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #1e1e2e; }
+    #pv-root { width: 100%; height: 100%; }
+  </style>
+  <link rel="stylesheet" href="pdf-viewer.css">
+</head>
+<body>
+
+<div id="pv-root"></div>
+
+<!-- PDF.js bundled locally — no internet required -->
+<script src="pdf.min.js"></script>
+<script src="pdf-viewer.js"></script>
+
+<script>
+  /**
+   * Called by Android (via evaluateJavascript) once the page is ready.
+   * config  — plain JSON object matching AdvancedPDFViewer options
+   *           (only serialisable keys; callbacks are wired below)
+   */
+  window._pvInit = function (config) {
+    var opts = Object.assign({
+      darkMode:        false,
+      sidebarOpen:     true,
+      sidebarTab:      'thumbs',
+      zoom:            'fitWidth',
+      enableKeyboard:  false,
+      enableDrop:      false,
+      thumbSize:       160,
+      renderTextLayer: true,
+      // Use bundled local files — no CDN, no internet required
+      workerSrc:  'pdf.worker.min.js',
+      cMapUrl:    null,
+      cMapPacked: false,
+    }, config || {});
+
+    // Wire Android bridge callbacks
+    opts.onLoad = function (pdf) {
+      if (window.AndroidBridge) AndroidBridge.onLoad(pdf.numPages);
+    };
+    opts.onPageChange = function (page, total) {
+      if (window.AndroidBridge) AndroidBridge.onPageChange(page, total);
+    };
+    opts.onError = function (err) {
+      if (window.AndroidBridge) AndroidBridge.onError(String(err));
+    };
+
+    window._pv = new AdvancedPDFViewer('#pv-root', opts);
+
+    // Expose a bridge object so Kotlin can drive the viewer
+    window._pvBridge = {
+      loadURL:        function (url)        { window._pv.loadURL(url); },
+      loadBase64:     function (b64, name)  {
+        var bin = atob(b64);
+        var arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        window._pv.loadArrayBuffer(arr.buffer, name || 'document.pdf');
+      },
+      goToPage:       function (n)   { window._pv.goToPage(n); },
+      setZoom:        function (v)   { window._pv.setZoom(v); },
+      zoomIn:         function ()    { window._pv.zoomIn(); },
+      zoomOut:        function ()    { window._pv.zoomOut(); },
+      toggleDarkMode: function ()    { window._pv.toggleDarkMode(); },
+      toggleSidebar:  function ()    { window._pv.toggleSidebar(); },
+      search:         function (q)   { window._pv.search(q); },
+      searchNext:     function ()    { window._pv.searchNext(); },
+      searchPrev:     function ()    { window._pv.searchPrev(); },
+      rotate:         function (deg) { window._pv.rotate(deg); },
+      download:       function ()    { window._pv.download(); },
+      destroy:        function ()    { window._pv.destroy(); },
+    };
+
+    // Tell Android the viewer is ready
+    if (window.AndroidBridge) AndroidBridge.onViewerReady();
+  };
+
+  // ── Web-only fallback ────────────────────────────────────────────────────
+  // When the page is opened in a normal browser (not Android WebView)
+  // AndroidBridge won't exist — auto-initialise with defaults so the
+  // HTML file can still be used standalone for development / testing.
+  (function () {
+    var hasAndroid = false;
+    try { hasAndroid = typeof AndroidBridge !== 'undefined'; } catch (e) {}
+    if (!hasAndroid) window._pvInit({});
+  })();
+</script>
+
+</body>
+</html>

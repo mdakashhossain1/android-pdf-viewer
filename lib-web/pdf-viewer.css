@@ -74,6 +74,7 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  height: 100%;               /* fill the container so only pv-viewport scrolls */
   transition: background var(--pv-transition), color var(--pv-transition);
   border-radius: var(--pv-radius);
   border: 1px solid var(--pv-border);
@@ -88,9 +89,45 @@
   z-index: 99999 !important;
   border-radius: 0 !important;
   border: none !important;
+  padding-bottom: 0 !important;  /* bottom-bar is overlaid, not in flow */
+}
+
+/* ── Fullscreen auto-hide: toolbar + bars become floating overlays ── */
+/* Toolbar slides up out of view; viewport fills the whole screen.    */
+.pdf-viewer-wrap.fullscreen-mode .pv-toolbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease;
+}
+/* Bottom bar slides down out of view */
+.pdf-viewer-wrap.fullscreen-mode .pv-bottom-bar {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease;
+}
+/* Status bar not needed in fullscreen */
+.pdf-viewer-wrap.fullscreen-mode .pv-statusbar { display: none; }
+
+/* fs-ui-visible — user interacted, slide everything back in */
+.pdf-viewer-wrap.fullscreen-mode.fs-ui-visible .pv-toolbar {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.pdf-viewer-wrap.fullscreen-mode.fs-ui-visible .pv-bottom-bar {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ---------- Scrollbars ---------- */
+/* The main viewport scrollbar is hidden — the card indicator replaces it.
+   Other scrollbars (sidebar, bottom bar) keep the styled 7px thumb. */
 .pdf-viewer-wrap ::-webkit-scrollbar { width: 7px; height: 7px; }
 .pdf-viewer-wrap ::-webkit-scrollbar-track { background: transparent; }
 .pdf-viewer-wrap ::-webkit-scrollbar-thumb {
@@ -98,6 +135,10 @@
   border-radius: 4px;
 }
 .pdf-viewer-wrap ::-webkit-scrollbar-thumb:hover { background: var(--pv-scrollbar-hover); }
+
+/* Hide the main viewport scrollbar — card indicator handles position feedback */
+.pv-viewport::-webkit-scrollbar { display: none; }
+.pv-viewport { scrollbar-width: none; }
 
 /* ---------- Top Toolbar ---------- */
 .pv-toolbar {
@@ -110,7 +151,7 @@
   gap: 4px;
   padding: 0 8px;
   z-index: 100;
-  flex-wrap: nowrap;   /* mobile overrides this to wrap */
+  flex-wrap: nowrap;
   overflow: visible;
   transition: background var(--pv-transition);
   box-shadow: var(--pv-shadow-sm);
@@ -133,6 +174,36 @@
 }
 
 .pv-toolbar-spacer { flex: 1; }
+
+.pv-tb-anchor { display: none; }
+
+/* ---------- Mobile Bottom Bar ---------- */
+.pv-bottom-bar {
+  display: none;
+  position: fixed;        /* always pinned to screen bottom — most reliable on mobile */
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9000;
+  align-items: center;
+  height: 52px;
+  background: var(--pv-toolbar-bg);
+  border-top: 1px solid var(--pv-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  gap: 2px;
+  padding: 0 6px;
+  /* Safe area inset for notched phones */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pv-bottom-bar::-webkit-scrollbar { display: none; }
+.pv-bottom-bar .pv-toolbar-group { flex-shrink: 0; padding: 0 4px; }
+.pv-bottom-bar .pv-toolbar-group + .pv-toolbar-group,
+.pv-bottom-bar .pv-toolbar-group + .pv-btn { border-left: 1px solid var(--pv-border); margin-left: 2px; padding-left: 6px; }
+.pv-bottom-bar .pv-btn { flex-shrink: 0; }
+
 
 /* ---------- Toolbar Buttons ---------- */
 .pv-btn {
@@ -530,7 +601,11 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* Do NOT use align-items:center here — it offsets wide pages to negative X
+     making the right side unreachable. Use margin:auto on the child instead. */
+  /* Claim pan gestures; JS handles pinch via touchstart/move/end — prevents
+     the browser's native pinch-zoom from fighting our JS handler (causes flicker). */
+  touch-action: pan-x pan-y;
 }
 
 /* ---------- Loading overlay ---------- */
@@ -648,6 +723,7 @@
   padding: 24px 24px 48px;
   gap: 16px;
   min-width: min-content;
+  margin: 0 auto; /* centers the container when narrower than the viewport */
 }
 
 .pv-pages-container.two-page {
@@ -840,6 +916,87 @@
   to { opacity: 0; transform: translateY(-6px); }
 }
 
+/* ---------- Scroll Indicator (Google Drive-style) ---------- */
+/* Card-tab that slides from the right edge — left side rounded, right side flush */
+.pv-scroll-indicator {
+  position: absolute;
+  right: 0;
+  top: 8px;
+  z-index: 8500;
+  user-select: none;
+  cursor: grab;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  background: #fff;
+  color: #3c4043;
+  padding: 8px 8px 8px 14px;
+  border-radius: 10px 0 0 10px;   /* tab shape: rounded left, flush right */
+  border: 1px solid rgba(0,0,0,0.13);
+  border-right: none;
+  box-shadow: -3px 0 12px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.10);
+
+  /* display:none by default — JS sets display:flex before showing and restores
+     it after the fade-out finishes. opacity/transform animate the entry/exit. */
+  display: none;
+  opacity: 0;
+  transform: translateX(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.pv-scroll-indicator.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.pv-scroll-indicator.dragging {
+  cursor: grabbing;
+  opacity: 1;
+  transform: translateX(0);
+  transition: none;   /* no animation while actively dragging */
+  box-shadow: -4px 0 18px rgba(0,0,0,0.22), 0 3px 8px rgba(0,0,0,0.15);
+}
+
+/* Page-number text */
+.pv-si-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* 2 × 3 dot grip — shows it's an interactive position control */
+.pv-si-grip {
+  display: grid;
+  grid-template-columns: repeat(2, 4px);
+  grid-template-rows: repeat(3, 4px);
+  gap: 3.5px;
+  padding: 2px 2px 2px 0;
+  flex-shrink: 0;
+}
+.pv-si-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #bdc1c6;
+}
+
+/* Dark mode — invert the card */
+.pdf-viewer-wrap.dark .pv-scroll-indicator {
+  background: #35373a;
+  color: #e8eaed;
+  border-color: rgba(255,255,255,0.1);
+  box-shadow: -3px 0 12px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.3);
+}
+.pdf-viewer-wrap.dark .pv-si-dot { background: #5f6368; }
+
+/* Mobile — keep same shape, slightly smaller text */
+@media (max-width: 767px) {
+  .pv-scroll-indicator { padding: 7px 6px 7px 11px; gap: 8px; }
+  .pv-si-text { font-size: 11.5px; }
+}
+
 /* ---------- Presentation / Fullscreen overlay ---------- */
 .pv-presentation-bar {
   position: absolute;
@@ -948,8 +1105,6 @@
 }
 .pv-sidebar-backdrop.visible { display: block; }
 
-/* ---------- Toolbar row-break (invisible on desktop) ---------- */
-.pv-toolbar-rowbreak { display: none; }
 
 /* ── xxl: 4K / large monitors (≥ 1400px) ─────────────────────── */
 @media (min-width: 1400px) {
@@ -973,72 +1128,61 @@
     --pv-sidebar-w: 270px;
   }
 
-  /* Sidebar becomes a slide-in overlay drawer */
+  /* Sidebar becomes a slide-in overlay drawer.
+     Default state is COLLAPSED so there is zero flash-of-open-sidebar
+     on page load — no JS timing dependency needed. */
   .pv-sidebar {
     position: absolute;
     top: 0; left: 0; height: 100%;
     z-index: 20;
-    box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
-    transform: translateX(0);
-    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.28s ease;
-  }
-  .pv-sidebar.hidden {
-    /* Keep dimensions so transition is smooth */
     width: var(--pv-sidebar-w) !important;
     min-width: var(--pv-sidebar-w) !important;
     transform: translateX(-110%);
     box-shadow: none;
     border-right-color: transparent;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.28s ease;
+  }
+  /* Open state — only when sidebar is explicitly shown */
+  .pv-sidebar:not(.hidden) {
+    transform: translateX(0);
+    box-shadow: 6px 0 28px rgba(0, 0, 0, 0.28);
+    border-right-color: var(--pv-border);
   }
 
-  /* 2-row toolbar via flex-wrap + order ─────────────────────── */
-  .pv-toolbar {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  /* Row 1 items */
-  .pv-tg-file         { order: 1; padding: 0 4px; min-height: var(--pv-toolbar-h); align-items: center; display: flex; }
-  .pv-toolbar-spacer  { order: 2; min-height: var(--pv-toolbar-h); }
-  .pv-tg-right        { order: 3; padding: 0 4px; min-height: var(--pv-toolbar-h); align-items: center; display: flex; }
-
-  /* Row-break forces wrap — sits between order 3 and order 10 */
-  .pv-toolbar-rowbreak {
-    display: block;
-    order: 5;
-    flex-basis: 100%;
-    height: 0;
-    border-top: 1px solid var(--pv-border);
-  }
-
-  /* Row 2 items */
-  .pv-tg-nav    { order: 10; flex: 1; justify-content: center; min-height: 44px; align-items: center; display: flex; padding: 2px 4px; }
-  .pv-zoom-wrap { order: 11; min-height: 44px; align-items: center; display: flex; padding: 2px 4px; }
-  .pv-search-bar{ order: 12; }
-  .pv-btnSearch { order: 12; }
-  .pv-tg-tools  { order: 13; min-height: 44px; align-items: center; display: flex; padding: 2px 4px; }
-
-  /* Hide all vertical separators — row-break is the only divider */
+  /* Nav/zoom/tools move to scrollable bottom bar via JS _applyLayout() */
   .pv-toolbar > .pv-toolbar-sep { display: none; }
+  .pv-bottom-bar  { display: flex; }
+  .pv-statusbar   { display: none; }
+  /* Push viewport content above the fixed bar */
+  .pv-wrap,
+  .pdf-viewer-wrap { padding-bottom: 52px; }
+  .pv-viewport    { padding-bottom: 8px; }
 
-  /* Misc */
   .pv-filename          { max-width: 150px; }
   .pv-pages-container   { padding: 12px 10px 36px; gap: 12px; }
   .pv-shortcut-box      { min-width: auto; max-width: 92vw; padding: 20px; margin: 0 16px; }
 }
 
+/* ── Search active: expand bar to full toolbar width on mobile ── */
+@media (max-width: 767px) {
+  .pdf-viewer-wrap.search-active .pv-tg-file,
+  .pdf-viewer-wrap.search-active .pv-tg-right,
+  .pdf-viewer-wrap.search-active .pv-toolbar-spacer,
+  .pdf-viewer-wrap.search-active .pv-btn-search { display: none; }
+
+  .pdf-viewer-wrap.search-active .pv-search-bar.open {
+    flex: 1;
+    max-width: none;
+    width: 100%;
+  }
+
+  .pdf-viewer-wrap.search-active .pv-search-input { width: 100%; }
+}
+
 /* ── sm: Large phones (480–599px) ─────────────────────────────── */
 @media (max-width: 599px) {
   :root { --pv-toolbar-h: 46px; }
-
-  /* Hide lower-priority right buttons; keep dark + fullscreen */
-  .pv-tg-right .pv-btn:nth-child(3)  /* keyboard */ { display: none; }
-
-  /* Hide extra tools group entirely */
-  .pv-tg-tools { display: none; }
 
   .pv-filename          { max-width: 110px; }
   .pv-zoom-select       { min-width: 82px; font-size: 12px; }
@@ -1059,15 +1203,6 @@
   /* Only show hamburger + open in file group — hide filename */
   .pv-filename { display: none; }
 
-  /* Only keep dark + fullscreen in right group */
-  .pv-tg-right .pv-btn:nth-child(3) { display: none; }
-
-  /* Compact nav: hide first/last page buttons */
-  .pv-tg-nav .pv-btn:first-child,
-  .pv-tg-nav .pv-btn:last-child  { display: none; }
-
-  /* Compact zoom: only dropdown */
-  .pv-zoom-wrap .pv-btn { display: none; }
   .pv-zoom-select { min-width: 80px; font-size: 12px; }
 
   .pv-page-input          { width: 36px; }
@@ -1075,7 +1210,6 @@
   .pv-search-input        { width: 80px; }
   .pv-search-opts         { display: none; }
   .pv-search-count        { min-width: 36px; font-size: 10px; }
-  .pv-statusbar           { font-size: 11px; gap: 8px; padding: 0 8px; }
   .pv-pages-container     { padding: 8px 4px 24px; gap: 8px; }
   .pv-shortcut-box        { padding: 16px 14px; }
 }
@@ -1083,7 +1217,6 @@
 /* ── xxs: Tiny / foldable screens (< 360px) ──────────────────── */
 @media (max-width: 359px) {
   .pv-btn { width: 30px; height: 30px; }
-  .pv-zoom-wrap  { display: none; }
   .pv-statusbar  { display: none; }
   .pv-page-sep, .pv-page-total { display: none; }
   .pv-tg-right .pv-btn:nth-child(2) /* fullscreen */ { display: none; }
@@ -1093,17 +1226,10 @@
 /* ── Landscape mode on mobile (short height) ─────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
   :root { --pv-toolbar-h: 40px; }
-  .pv-statusbar       { display: none; }
-  /* Collapse back to single-row toolbar in landscape */
-  .pv-toolbar         { flex-wrap: nowrap; height: var(--pv-toolbar-h); overflow: hidden; }
-  .pv-toolbar-rowbreak { display: none !important; }
-  .pv-tg-file, .pv-toolbar-spacer, .pv-tg-right,
-  .pv-tg-nav, .pv-zoom-wrap, .pv-tg-tools {
-    order: unset; min-height: unset;
-  }
-  .pv-toolbar > .pv-toolbar-sep { display: block; }
-  .pv-tg-tools { display: none; }
-  .pv-sidebar  { display: none; }
+  .pv-statusbar  { display: none; }
+  .pv-bottom-bar { display: none; }
+  .pv-tg-tools   { display: none; }
+  .pv-sidebar    { display: none; }
 }
 
 /* ── Touch / pointer: coarse (touch screens) ─────────────────── */
@@ -1125,7 +1251,8 @@
   .pv-sidebar,
   .pv-page-canvas-wrap,
   .pv-toast,
-  .pv-search-bar { transition: none !important; animation: none !important; }
+  .pv-search-bar,
+  .pv-scroll-indicator { transition: none !important; animation: none !important; }
   .pv-spinner    { animation: none !important; border-top-color: var(--pv-accent); }
 }
 
@@ -1138,7 +1265,9 @@
 @media print {
   .pv-toolbar,
   .pv-sidebar,
-  .pv-statusbar { display: none !important; }
+  .pv-statusbar,
+  .pv-bottom-bar,
+  .pv-scroll-indicator { display: none !important; }
   .pv-viewport { overflow: visible !important; }
   .pv-pages-container { padding: 0 !important; gap: 0 !important; }
   .pv-page-canvas-wrap { box-shadow: none !important; page-break-after: always; }

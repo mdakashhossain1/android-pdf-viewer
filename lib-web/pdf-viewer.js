@@ -118,8 +118,11 @@
       this._pdfUrl      = null;
       this._pdfBytes    = null;
       this._shortcutOpen = false;
-      this._scrollTimer  = null;
-      this._resizeObs    = null;
+      this._scrollTimer          = null;
+      this._scrollIndicatorTimer = null;
+      this._scrollHideTimer      = null;
+      this._fsUiTimer            = null;
+      this._resizeObs            = null;
       this._pendingZoom  = this.opts.zoom;
 
       this._build();
@@ -131,6 +134,10 @@
        Build DOM
     --------------------------------------------------- */
     _build() {
+      // On mobile, always start with sidebar collapsed so the CSS default
+      // (transform: translateX(-110%)) is already in effect on first paint.
+      if (window.innerWidth <= 767) this.sidebarOpen = false;
+
       this.wrap = el('div', 'pdf-viewer-wrap' + (this.darkMode ? ' dark' : ''));
 
       // ---- Toolbar ----
@@ -185,6 +192,17 @@
       this.toastWrap = el('div', 'pv-toast-wrap');
       this.viewport.appendChild(this.toastWrap);
 
+      // Scroll indicator — card-tab that slides from the right edge.
+      // Appended to this.wrap (position:relative), NOT this.viewport, so it
+      // stays fixed relative to the viewer and doesn't scroll with the content.
+      this.scrollIndicator = el('div', 'pv-scroll-indicator');
+      this._siText = el('span', 'pv-si-text');
+      const siGrip = el('span', 'pv-si-grip');
+      // 6 dots (2 cols × 3 rows) — visual grip handle
+      for (let i = 0; i < 6; i++) siGrip.appendChild(el('span', 'pv-si-dot'));
+      this.scrollIndicator.appendChild(this._siText);
+      this.scrollIndicator.appendChild(siGrip);
+
       // Context menu
       this.ctxMenu = el('div', 'pv-context-menu');
       this.ctxMenu.innerHTML = `
@@ -222,6 +240,14 @@
       // Status bar
       this.wrap.appendChild(this._buildStatusBar());
 
+      // Bottom bar — fixed to screen bottom on mobile (position:fixed in CSS)
+      this.bottomBar = el('div', 'pv-bottom-bar');
+      this.wrap.appendChild(this.bottomBar);
+
+      // Scroll indicator — lives in this.wrap (position:relative) so it stays
+      // fixed relative to the viewer, not the scrollable content.
+      this.wrap.appendChild(this.scrollIndicator);
+
       this.container.appendChild(this.wrap);
 
       // Apply sidebar initial state
@@ -230,8 +256,9 @@
 
     _buildToolbar() {
       const tb = el('div', 'pv-toolbar');
+      this.toolbar = tb;
 
-      // ── File group (hamburger · open · filename) ──────────────────────────
+      // ── File group (hamburger · open · filename) — always top ────────────
       const g1 = el('div', 'pv-toolbar-group pv-tg-file');
       this.btnSidebar = btn('menu', 'Toggle sidebar');
       this.btnSidebar.classList.toggle('active', this.sidebarOpen);
@@ -241,7 +268,7 @@
       tb.appendChild(g1);
       tb.appendChild(el('div', 'pv-toolbar-sep pv-sep-after-file'));
 
-      // ── Navigation group ──────────────────────────────────────────────────
+      // ── Navigation group ── (moves to bottom bar on mobile) ──────────────
       const gnav = el('div', 'pv-toolbar-group pv-tg-nav');
       this.btnFirst  = btn('first', 'First page');
       this.btnPrev   = btn('prev',  'Previous page (←)');
@@ -256,10 +283,8 @@
       this.btnNext = btn('next', 'Next page (→)');
       this.btnLast = btn('last', 'Last page');
       gnav.append(this.btnFirst, this.btnPrev, this.pageNav, this.btnNext, this.btnLast);
-      tb.appendChild(gnav);
-      tb.appendChild(el('div', 'pv-toolbar-sep'));
 
-      // ── Zoom group ────────────────────────────────────────────────────────
+      // ── Zoom group ── (moves to bottom bar on mobile) ─────────────────────
       const gzoom = el('div', 'pv-toolbar-group pv-zoom-wrap');
       this.btnZoomOut = btn('zoomout', 'Zoom out (Ctrl+−)');
       this.zoomSelect = el('select', 'pv-zoom-select');
@@ -274,10 +299,13 @@
       });
       this.btnZoomIn = btn('zoomin', 'Zoom in (Ctrl++)');
       gzoom.append(this.btnZoomOut, this.zoomSelect, this.btnZoomIn);
-      tb.appendChild(gzoom);
+
+      // Anchor 1 — desktop: gnav + gzoom live before search bar
+      this._tbAnchor1 = el('span', 'pv-tb-anchor');
+      tb.appendChild(this._tbAnchor1);
       tb.appendChild(el('div', 'pv-toolbar-sep'));
 
-      // ── Search bar (inline, expands when open) ────────────────────────────
+      // ── Search bar (inline, expands when open) — always top ──────────────
       this.searchBar = el('div', 'pv-search-bar');
       this.searchInput = el('input', 'pv-search-input');
       this.searchInput.type = 'text';
@@ -289,48 +317,44 @@
       searchNextBtn.id  = 'pv-search-next';
       const searchClose = btn('close', 'Close search');
       searchClose.id    = 'pv-search-close';
-      const searchOpts  = el('div', 'pv-search-opts');
-      const caseLabel   = el('label', '', `<input type="checkbox" id="pv-case-check"> Case`);
-      const wholeLabel  = el('label', '', `<input type="checkbox" id="pv-whole-check"> Whole`);
-      searchOpts.append(caseLabel, wholeLabel);
       const srchIcon = el('span', ''); srchIcon.innerHTML = ICONS.search;
       this.searchBar.append(srchIcon, this.searchInput, this.searchCountEl,
-        searchPrev, searchNextBtn, searchOpts, searchClose);
+        searchPrev, searchNextBtn, searchClose);
       tb.appendChild(this.searchBar);
-
-      // Search toggle button
       this.btnSearch = btn('search', 'Search (Ctrl+F)');
       tb.appendChild(this.btnSearch);
-      tb.appendChild(el('div', 'pv-toolbar-sep'));
 
-      // ── Extra tools (rotate · two-page · fit-width) ───────────────────────
+      // ── Extra tools (rotate · two-page · fit-width) ── (moves to bottom bar)
       const gtools = el('div', 'pv-toolbar-group pv-tg-tools');
       this.btnRotL    = btn('rotate_l', 'Rotate left (Shift+R)');
       this.btnRotR    = btn('rotate_r', 'Rotate right (R)');
       this.btnTwoPage = btn('twopage',  'Two-page view (T)');
       this.btnFitW    = btn('fit_w',    'Fit width (Ctrl+0)');
       gtools.append(this.btnRotL, this.btnRotR, this.btnTwoPage, this.btnFitW);
-      tb.appendChild(gtools);
+
+      // ── Keyboard btn ── (moves to bottom bar on mobile) ──────────────────
+      this.btnKeyboard = btn('keyboard', 'Keyboard shortcuts (?)');
+
+      // Anchor 2 — desktop: gtools + btnKeyboard live after search button
       tb.appendChild(el('div', 'pv-toolbar-sep'));
+      this._tbAnchor2 = el('span', 'pv-tb-anchor');
+      tb.appendChild(this._tbAnchor2);
 
-      // ── Row break: invisible on desktop, forces 2nd row on mobile ─────────
-      this.toolbarRowBreak = el('div', 'pv-toolbar-rowbreak');
-      tb.appendChild(this.toolbarRowBreak);
-
-      // ── Spacer + Right tools ──────────────────────────────────────────────
+      // ── Spacer + Right tools (dark · fullscreen) — always top ────────────
       tb.appendChild(el('div', 'pv-toolbar-spacer'));
       const gright = el('div', 'pv-toolbar-group pv-tg-right');
       this.btnDark       = btn(this.darkMode ? 'light' : 'dark', 'Toggle dark mode (D)');
       this.btnFullscreen = btn('fullscreen', 'Fullscreen (F)');
-      this.btnKeyboard   = btn('keyboard',   'Keyboard shortcuts (?)');
-      gright.append(this.btnDark, this.btnFullscreen, this.btnKeyboard);
+      gright.append(this.btnDark, this.btnFullscreen);
       tb.appendChild(gright);
+
+      // Groups that travel to bottom bar on mobile
+      this._bbGroup1 = [gnav, gzoom];               // inserted before search (anchor 1)
+      this._bbGroup2 = [gtools, this.btnKeyboard];   // inserted after search (anchor 2)
 
       this._searchPrev  = searchPrev;
       this._searchNext  = searchNextBtn;
       this._searchClose = searchClose;
-      this._caseCheck   = caseLabel.querySelector('input');
-      this._wholeCheck  = wholeLabel.querySelector('input');
 
       return tb;
     }
@@ -543,24 +567,116 @@
 
     async zoomIn() {
       this._zoomMode = 'manual';
-      this.zoom = Math.min(this.zoom * 1.25, 5);
-      await this._renderAllPages();
+      this.zoom = Math.min(this.zoom * 1.25, 4.0);
       this._syncZoomSelect();
       this._updateStatusBar();
+      this._applyZoomScaleHint();
+      this._scheduleRender();
     }
     async zoomOut() {
       this._zoomMode = 'manual';
       this.zoom = Math.max(this.zoom * 0.8, 0.1);
-      await this._renderAllPages();
       this._syncZoomSelect();
       this._updateStatusBar();
+      this._applyZoomScaleHint();
+      this._scheduleRender();
+    }
+
+    _applyZoomScaleHint() {
+      if (!this._renderedZoom) return;
+      const ratio = this.zoom / this._renderedZoom;
+      this.pagesContainer.style.transformOrigin = 'top center';
+      this.pagesContainer.style.willChange      = 'transform';
+      this.pagesContainer.style.transform       = `scale(${ratio})`;
+    }
+
+    _scheduleRender() {
+      clearTimeout(this._renderTimer);
+      this._renderTimer = setTimeout(() => {
+        this.pagesContainer.style.transform       = '';
+        this.pagesContainer.style.transformOrigin = '';
+        this.pagesContainer.style.willChange      = '';
+        this._reRenderPagesInPlace();   // no blank flash for button zoom either
+      }, 250);
     }
 
     /* ---------------------------------------------------
        Page rendering
     --------------------------------------------------- */
+    // Re-render after a zoom change WITHOUT clearing pages first.
+    // Each existing canvas stays visible until its replacement finishes — no blank flash.
+    //
+    // Split into three methods so _onTouchEnd can call them across two animation frames
+    // to eliminate the brief jump seen when clearing the CSS scale and correcting scroll:
+    //   1. _updatePageDimensions() — sync, safe to call while CSS transform is still active
+    //   2. _triggerReRender()      — re-wires observer and starts rendering
+    //   3. _reRenderPagesInPlace() — convenience wrapper used by button / wheel zoom
+
+    // Step 1: Resize every page container to the current zoom. Does NOT touch the CSS
+    // transform or the scroll position, so it can run while the pinch scale is still live.
+    _updatePageDimensions() {
+      if (!this.pdfDoc) return;
+      this._renderedZoom = this.zoom;
+
+      this.pagesContainer.querySelectorAll('.pv-page-wrap').forEach(w => {
+        if (w._renderTask) { try { w._renderTask.cancel(); } catch (_) {} }
+        w._rendered  = false;
+        w._rendering = false;
+
+        // Update stored viewport to new zoom
+        w._vp = w._page.getViewport({ scale: this.zoom, rotation: this.rotation });
+
+        // Resize the canvas-wrap container so layout adjusts immediately
+        const cw = w.querySelector('.pv-page-canvas-wrap');
+        if (cw) {
+          cw.style.width  = w._vp.width  + 'px';
+          cw.style.height = w._vp.height + 'px';
+        }
+        // Stretch the existing canvas to fill its new container so old content
+        // looks naturally scaled instead of misaligned while the new render arrives.
+        if (w._canvas) {
+          w._canvas.style.width  = w._vp.width  + 'px';
+          w._canvas.style.height = w._vp.height + 'px';
+        }
+        if (w._textLayer) {
+          w._textLayer.style.width  = w._vp.width  + 'px';
+          w._textLayer.style.height = w._vp.height + 'px';
+        }
+        this.pageHeights[parseInt(w.dataset.page)] = w._vp.height;
+      });
+    }
+
+    // Step 2: Re-wire the IntersectionObserver and eagerly render the visible pages.
+    _triggerReRender() {
+      if (this._ioObserver) this._ioObserver.disconnect();
+      this._ioObserver = null;
+      this._lazyRender();
+
+      const lo = Math.max(1, this.currentPage - 1);
+      const hi = Math.min(this.totalPages, this.currentPage + 1);
+      for (let i = lo; i <= hi; i++) {
+        const w = this.pagesContainer.querySelector(`.pv-page-wrap[data-page="${i}"]`);
+        if (w) this._renderPage(w);
+      }
+    }
+
+    // Step 3: Convenience wrapper used by button zoom and wheel zoom.
+    async _reRenderPagesInPlace(targetScrollLeft, targetScrollTop) {
+      if (!this.pdfDoc) return;
+      this._updatePageDimensions();
+
+      // Apply corrected scroll position BEFORE lazy render wires up
+      if (targetScrollLeft !== undefined) {
+        this.viewport.scrollLeft = targetScrollLeft;
+        this.viewport.scrollTop  = targetScrollTop;
+      }
+
+      this._triggerReRender();
+    }
+
     async _renderAllPages() {
       if (!this.pdfDoc) return;
+      this._renderedZoom = this.zoom;
       this._clearPages();
       this.pageHeights = [];
 
@@ -743,6 +859,9 @@
        Scroll → current page tracker
     --------------------------------------------------- */
     _onViewportScroll() {
+      // Show the page pill immediately — no debounce needed for visual feedback
+      this._showScrollIndicator();
+
       clearTimeout(this._scrollTimer);
       this._scrollTimer = setTimeout(() => {
         const wraps = this.pagesContainer.querySelectorAll('.pv-page-wrap');
@@ -765,9 +884,128 @@
           this._updateNavButtons();
           this._updateStatusBar();
           this._highlightActiveThumb(best);
+          // Refresh indicator text after page number is confirmed
+          this._updateScrollIndicatorText();
           if (typeof this.opts.onPageChange === 'function') this.opts.onPageChange(best, this.totalPages);
         }
       }, 80);
+    }
+
+    // Show/reposition the scroll indicator immediately on scroll.
+    _showScrollIndicator() {
+      if (!this.pdfDoc || !this.totalPages) return;
+      const si = this.scrollIndicator;
+      const vp = this.viewport;
+
+      // Cancel any pending hide
+      clearTimeout(this._scrollIndicatorTimer);
+      clearTimeout(this._scrollHideTimer);
+
+      // Step 1: make the element part of layout (display:flex) so offsetHeight works
+      si.style.display = 'flex';
+
+      // Step 2: position based on scroll progress
+      const scrollH = vp.scrollHeight - vp.clientHeight;
+      if (scrollH > 0) {
+        const progress    = vp.scrollTop / scrollH;
+        const indH        = si.offsetHeight || 40;
+        const vpTopInWrap = this._vpTopInWrap();
+        const maxTravel   = vp.clientHeight - indH - 16;
+        si.style.top      = Math.round(vpTopInWrap + 8 + progress * Math.max(0, maxTravel)) + 'px';
+      }
+      this._siText.textContent = `${this.currentPage} / ${this.totalPages}`;
+
+      // Step 3: trigger CSS fade-in in the next frame (display must be set first)
+      requestAnimationFrame(() => si.classList.add('visible'));
+
+      // Step 4: schedule hide after 1.5s idle
+      this._scrollIndicatorTimer = setTimeout(() => this._hideScrollIndicator(), 1500);
+    }
+
+    // Fade out then set display:none — the only reliable way to suppress it on Android.
+    _hideScrollIndicator() {
+      const si = this.scrollIndicator;
+      si.classList.remove('visible');           // triggers CSS fade-out (0.2s)
+      clearTimeout(this._scrollHideTimer);
+      this._scrollHideTimer = setTimeout(() => {
+        // Only hide if .visible wasn't re-added while we were waiting
+        if (!si.classList.contains('visible') && !si.classList.contains('dragging')) {
+          si.style.display = 'none';
+        }
+      }, 220);                                   // slightly longer than 0.2s transition
+    }
+
+    // Update indicator text only (called after debounce confirms new page number).
+    _updateScrollIndicatorText() {
+      if (!this.pdfDoc || !this.totalPages) return;
+      this._siText.textContent = `${this.currentPage} / ${this.totalPages}`;
+    }
+
+    /* ---------------------------------------------------
+       Scroll-indicator drag
+    --------------------------------------------------- */
+    _bindScrollIndicatorDrag() {
+      const si  = this.scrollIndicator;
+      const vp  = this.viewport;
+      let dragging    = false;
+      let startY      = 0;
+      let startScroll = 0;
+
+      const getClientY = e => e.touches ? e.touches[0].clientY : e.clientY;
+
+      const onStart = (e) => {
+        dragging    = true;
+        startY      = getClientY(e);
+        startScroll = vp.scrollTop;
+        si.classList.add('dragging');
+        // Keep indicator visible the whole time — cancel the auto-hide timer
+        clearTimeout(this._scrollIndicatorTimer);
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const onMove = (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+
+        const dy      = getClientY(e) - startY;
+        const scrollH = vp.scrollHeight - vp.clientHeight;
+        const indH    = si.offsetHeight || 40;
+        // Track height = viewport height minus pill height minus top/bottom margins
+        const trackH  = Math.max(1, vp.clientHeight - indH - 16);
+        // Map drag pixels → scroll pixels
+        const newScroll = startScroll + (dy / trackH) * scrollH;
+        vp.scrollTop = Math.max(0, Math.min(scrollH, newScroll));
+
+        // Reposition pill to match new scroll (without showing the slide-in animation)
+        const progress = vp.scrollTop / scrollH;
+        const top      = this._vpTopInWrap() + 8 + progress * trackH;
+        si.style.top   = Math.round(top) + 'px';
+        this._siText.textContent = `${this.currentPage} / ${this.totalPages}`;
+      };
+
+      const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        si.classList.remove('dragging');
+        // Start the normal auto-hide countdown from this moment
+        clearTimeout(this._scrollIndicatorTimer);
+        this._scrollIndicatorTimer = setTimeout(() => this._hideScrollIndicator(), 1500);
+      };
+
+      si.addEventListener('mousedown',  onStart);
+      si.addEventListener('touchstart', onStart, { passive: false });
+      document.addEventListener('mousemove',  onMove);
+      document.addEventListener('touchmove',  onMove, { passive: false });
+      document.addEventListener('mouseup',    onEnd);
+      document.addEventListener('touchend',   onEnd);
+    }
+
+    // Returns the distance (px) from the top of this.wrap to the top of this.viewport.
+    _vpTopInWrap() {
+      const vpRect   = this.viewport.getBoundingClientRect();
+      const wrapRect = this.wrap.getBoundingClientRect();
+      return vpRect.top - wrapRect.top;
     }
 
     /* ---------------------------------------------------
@@ -809,13 +1047,10 @@
       this.searchIdx     = -1;
       this._pageTextCache = {};
 
-      const caseSensitive = opts.caseSensitive || this._caseCheck.checked;
-      const wholeWord     = opts.wholeWord     || this._wholeCheck.checked;
-
       this._clearSearchHighlights();
 
-      const flags = 'g' + (caseSensitive ? '' : 'i');
-      const pat   = wholeWord ? `\\b${this._escapeRe(query)}\\b` : this._escapeRe(query);
+      const flags = 'gi';
+      const pat   = this._escapeRe(query);
 
       // Build match list — per-item segment info for accurate highlight positioning
       for (let p = 1; p <= this.totalPages; p++) {
@@ -971,6 +1206,7 @@
       this.searchOpen = !this.searchOpen;
       this.searchBar.classList.toggle('open', this.searchOpen);
       this.btnSearch.classList.toggle('active', this.searchOpen);
+      this.wrap.classList.toggle('search-active', this.searchOpen);
       if (this.searchOpen) this.searchInput.focus();
       else { this._clearSearchHighlights(); this.searchQuery = ''; }
     }
@@ -1150,6 +1386,20 @@
       this.btnFullscreen.innerHTML = this.isFullscreen ? ICONS.compress : ICONS.fullscreen;
       this.btnFullscreen.setAttribute('data-tip', this.isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)');
       if (this.pdfDoc) setTimeout(() => this._applyInitialZoom(), 200);
+
+      if (this.isFullscreen) {
+        // Enter fullscreen — show controls so user can see them immediately.
+        // Tapping the PDF content area will toggle them on/off.
+        this.wrap.classList.add('fs-ui-visible');
+      } else {
+        // Exit fullscreen — always restore controls
+        this.wrap.classList.remove('fs-ui-visible');
+      }
+    }
+
+    // Toggle toolbar + bottom bar visibility with a single tap in fullscreen.
+    _toggleFsUi() {
+      this.wrap.classList.toggle('fs-ui-visible');
     }
 
     /* ---------------------------------------------------
@@ -1308,31 +1558,76 @@
     --------------------------------------------------- */
     _onTouchStart(e) {
       if (e.touches.length === 2) {
-        this._pinchDist = Math.hypot(
+        this._pinchDist  = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
-        this._pinchZoom = this.zoom;
+        this._pinchZoom  = this.zoom;
+        this._pinchRatio = 1;
+
+        // Midpoint relative to the scrollable viewport — used to correct scroll after zoom
+        const vpRect        = this.viewport.getBoundingClientRect();
+        this._pinchMidX     = (e.touches[0].clientX + e.touches[1].clientX) / 2 - vpRect.left;
+        this._pinchMidY     = (e.touches[0].clientY + e.touches[1].clientY) / 2 - vpRect.top;
+        this._pinchScrollX  = this.viewport.scrollLeft;
+        this._pinchScrollY  = this.viewport.scrollTop;
+
+        // Anchor CSS transform-origin to the same midpoint inside pagesContainer
+        const pcRect = this.pagesContainer.getBoundingClientRect();
+        const cx     = (e.touches[0].clientX + e.touches[1].clientX) / 2 - pcRect.left;
+        const cy     = (e.touches[0].clientY + e.touches[1].clientY) / 2 - pcRect.top;
+        this.pagesContainer.style.transformOrigin = `${cx}px ${cy}px`;
+        this.pagesContainer.style.willChange      = 'transform';
       }
     }
     _onTouchMove(e) {
       if (e.touches.length === 2 && this._pinchDist) {
         e.preventDefault();
-        const d = Math.hypot(
+        const d     = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
-        const ratio = d / this._pinchDist;
-        const newZ = Math.max(0.1, Math.min(this._pinchZoom * ratio, 5));
-        this.zoom = newZ;
-        this._syncZoomSelect();
-        this._updateStatusBar();
+        // Clamp so the visual scale stays within allowed zoom bounds
+        const raw   = d / this._pinchDist;
+        const minR  = 0.1  / this._pinchZoom;
+        const maxR  = 4.0  / this._pinchZoom;
+        this._pinchRatio = Math.max(minR, Math.min(maxR, raw));
+
+        // GPU-accelerated CSS scale — instant visual feedback, zero re-render cost
+        this.pagesContainer.style.transform = `scale(${this._pinchRatio})`;
       }
     }
     _onTouchEnd() {
       if (this._pinchDist) {
-        this._pinchDist = null;
-        this._renderAllPages();
+        const newZ  = Math.max(0.1, Math.min(this._pinchZoom * this._pinchRatio, 4.0));
+        this.zoom   = newZ;
+        const ratio = newZ / this._pinchZoom;
+
+        // Compute new scroll so the pinch midpoint stays over the same content.
+        // Formula: newScroll = (oldScroll + mid) * ratio - mid
+        const newScrollLeft = (this._pinchScrollX + this._pinchMidX) * ratio - this._pinchMidX;
+        const newScrollTop  = (this._pinchScrollY + this._pinchMidY) * ratio - this._pinchMidY;
+
+        this._syncZoomSelect();
+        this._updateStatusBar();
+
+        // Phase 1 (sync): resize every page container to the new zoom while the CSS
+        // scale is still active — layout settles before the browser paints anything.
+        this._updatePageDimensions();
+
+        // Phase 2 (next frame): clear the CSS scale + set scroll in a single RAF so
+        // both happen atomically in the same paint, eliminating the brief jump.
+        requestAnimationFrame(() => {
+          this.pagesContainer.style.transform       = '';
+          this.pagesContainer.style.transformOrigin = '';
+          this.pagesContainer.style.willChange      = '';
+          this.viewport.scrollLeft = newScrollLeft;
+          this.viewport.scrollTop  = newScrollTop;
+          this._triggerReRender();
+        });
+
+        this._pinchDist  = null;
+        this._pinchRatio = 1;
       }
     }
 
@@ -1352,7 +1647,9 @@
     --------------------------------------------------- */
     _initResize() {
       if (!window.ResizeObserver) return;
+      this._applyLayout();
       this._resizeObs = new ResizeObserver(() => {
+        this._applyLayout();
         // Only re-fit when the user's chosen mode is a fit mode — never override a manual zoom
         const mode = this._zoomMode || this._pendingZoom;
         if (this.pdfDoc && (mode === 'fitWidth' || mode === 'fitPage')) {
@@ -1364,7 +1661,20 @@
           this.sidebarBackdrop.classList.remove('visible');
         }
       });
-      this._resizeObs.observe(this.viewport);
+      this._resizeObs.observe(this.wrap);
+    }
+
+    _applyLayout() {
+      const mobile = this.wrap.offsetWidth <= 767;
+      if (this._layoutMobile === mobile) return;
+      this._layoutMobile = mobile;
+      const all = [...this._bbGroup1, ...this._bbGroup2];
+      if (mobile) {
+        all.forEach(e => this.bottomBar.appendChild(e));
+      } else {
+        this._bbGroup1.forEach(e => this.toolbar.insertBefore(e, this._tbAnchor1));
+        this._bbGroup2.forEach(e => this.toolbar.insertBefore(e, this._tbAnchor2));
+      }
     }
 
     /* ---------------------------------------------------
@@ -1409,8 +1719,6 @@
       this._searchPrev.addEventListener('click',  () => this.searchPrev());
       this._searchNext.addEventListener('click',  () => this.searchNext());
       this._searchClose.addEventListener('click', () => this.toggleSearch());
-      this._caseCheck.addEventListener('change',  () => this.search(this.searchInput.value));
-      this._wholeCheck.addEventListener('change', () => this.search(this.searchInput.value));
 
       this.btnRotL.addEventListener('click', () => this.rotate(-90));
       this.btnRotR.addEventListener('click', () => this.rotate(90));
@@ -1434,6 +1742,9 @@
 
       // Viewport scroll
       this.viewport.addEventListener('scroll', () => this._onViewportScroll());
+
+      // Scroll indicator drag
+      this._bindScrollIndicatorDrag();
 
       // Drag & drop
       if (this.opts.enableDrop) {
@@ -1462,6 +1773,9 @@
 
       // Fullscreen events
       document.addEventListener('fullscreenchange', () => this._onFullscreenChange());
+
+      // Fullscreen tap-to-toggle: tap the PDF content area to show/hide controls
+      this.viewport.addEventListener('click', () => { if (this.isFullscreen) this._toggleFsUi(); });
 
       // Keyboard
       if (this.opts.enableKeyboard) {

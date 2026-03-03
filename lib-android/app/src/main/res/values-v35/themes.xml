@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.MyApplication" parent="Base.Theme.MyApplication">
+        <!-- Opt out of Android 15+ forced edge-to-edge -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
