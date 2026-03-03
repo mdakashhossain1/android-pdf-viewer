@@ -45,7 +45,7 @@ You can help in many ways:
 |------|---------|
 | Android Studio | Ladybug (2024.2) or newer |
 | JDK | 11+ |
-| Android SDK | API 24–35 |
+| Android SDK | API 24–36 |
 | Kotlin | 2.1.0 (via AGP 9.0.1) |
 
 ### Clone and open
@@ -64,11 +64,11 @@ The demo app loads a sample PDF and exercises the main API surface.
 
 ### Sync web assets (optional)
 
-If you edit `pdf-viewer.js` or `pdf-viewer.css` at the web layer, copy them into the Android assets folder:
+If you edit web files in `lib-web/`, copy them into the Android assets folder:
 
 ```bash
-cp pdf-viewer.js  pdfviewer/src/main/assets/pdfviewer/pdf-viewer.js
-cp pdf-viewer.css pdfviewer/src/main/assets/pdfviewer/pdf-viewer.css
+cp lib-web/pdf-viewer.js  pdfviewer/src/main/assets/pdfviewer/pdf-viewer.js
+cp lib-web/pdf-viewer.css pdfviewer/src/main/assets/pdfviewer/pdf-viewer.css
 ```
 
 ---
@@ -77,6 +77,10 @@ cp pdf-viewer.css pdfviewer/src/main/assets/pdfviewer/pdf-viewer.css
 
 ```
 android-pdf-viewer/
+├── lib-web/                            ← Web files (use in any web project)
+│   ├── index.html
+│   ├── pdf-viewer.js
+│   └── pdf-viewer.css
 ├── pdfviewer/                          ← Android library module (publish this)
 │   └── src/main/
 │       ├── AndroidManifest.xml
@@ -89,11 +93,12 @@ android-pdf-viewer/
 │       └── java/com/arknox/pdf/pdfviewer/
 │           ├── PdfViewer.kt            ← Main View (WebView wrapper)
 │           └── PdfViewerConfig.kt      ← Configuration data class
-└── app/                                ← Demo application
-    └── src/main/
-        ├── AndroidManifest.xml
-        ├── java/.../MainActivity.kt    ← Demo Activity
-        └── res/layout/activity_main.xml
+├── app/                                ← Demo application
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/.../MainActivity.kt    ← Demo Activity
+│       └── res/layout/activity_main.xml
+└── build.gradle.kts
 ```
 
 ---
