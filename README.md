@@ -25,7 +25,7 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.mdakashhossain1:android-pdf-viewer:1.0.1")
+    implementation("com.github.mdakashhossain1:android-pdf-viewer:1.0.2")
 }
 ```
 
@@ -258,18 +258,19 @@ pickPdf.launch("application/pdf")
 
 ```
 pdf-view-lib/
-├── pdf-viewer.css        ← all styles (web)
-├── pdf-viewer.js         ← viewer library (web)
-├── index.html            ← web demo
-└── lib-android/
-    ├── app/              ← demo Android app
-    └── pdfviewer/        ← Android library module
-        └── src/main/
-            ├── assets/pdfviewer/
-            │   ├── viewer.html     ← HTML shell (WebView host)
-            │   ├── pdf-viewer.js   ← copy of web library
-            │   └── pdf-viewer.css  ← copy of web styles
-            └── java/com/arknox/pdf/pdfviewer/
-                ├── PdfViewer.kt        ← main View class
-                └── PdfViewerConfig.kt  ← configuration data class
+├── lib-web/                 ← web files (use in any web project)
+│   ├── index.html
+│   ├── pdf-viewer.css
+│   └── pdf-viewer.js
+├── app/                     ← demo Android app
+├── pdfviewer/               ← Android library module
+│   └── src/main/
+│       ├── assets/pdfviewer/
+│       │   ├── viewer.html     ← HTML shell (WebView host)
+│       │   ├── pdf-viewer.js   ← copy of web library
+│       │   └── pdf-viewer.css  ← copy of web styles
+│       └── java/com/arknox/pdf/pdfviewer/
+│           ├── PdfViewer.kt        ← main View class
+│           └── PdfViewerConfig.kt  ← configuration data class
+└── build.gradle.kts
 ```
